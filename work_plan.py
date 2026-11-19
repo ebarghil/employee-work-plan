@@ -41,6 +41,12 @@ CONFIG_PATH = os.path.join(APP_DIR, CONFIG_NAME)
 OUTPUT_NAME = "work_plan.xlsx"  # always the same name; overwritten on every run
 log = logging.getLogger("work_plan")
 
+# Employee names to merge: "name in the file" -> "name to show in the plan".
+NAME_REPLACEMENTS = {
+    "ג'ק פחימה": "ג'ק פימה",
+    "אורית גרוס": "אורית שדה",
+}
+
 HEADER_ROW = 5
 FIRST_DATA_ROW = 7
 
@@ -207,6 +213,7 @@ def read_orders(path, basis):
             if factor is None:
                 continue
             name = clean(ws.cell(r, header[COL_NAME]).value)
+            name = NAME_REPLACEMENTS.get(name, name)
             qty = ws.cell(r, header[COL_QTY]).value if COL_QTY in header else None
             act = ws.cell(r, header[COL_ACTIVATION]).value
             appr = ws.cell(r, header[COL_APPROVAL]).value
