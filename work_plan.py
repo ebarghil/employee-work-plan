@@ -36,6 +36,8 @@ IBM_PRODUCT_DAYS = {"068": 0.5, "069": 0.5, "001": 22.0, "123": 18.0}
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_PATH = os.path.join(APP_DIR, "work_plan.log")
+CONFIG_NAME = "working_days.xlsx"  # config: month | working days (edit it freely)
+CONFIG_PATH = os.path.join(APP_DIR, CONFIG_NAME)
 OUTPUT_NAME = "work_plan.xlsx"  # always the same name; overwritten on every run
 log = logging.getLogger("work_plan")
 
@@ -95,6 +97,57 @@ def ibm_day_factor(product):
     return IBM_PRODUCT_DAYS.get(m.group(1)) if m else None
 
 
+def default_working_days(month):
+    """Default = Sunday-Thursday days in the month (no holidays). Edit working_days.xlsx to fix."""
+    n, d = 0, month
+    while d.month == month.month:
+        n += d.weekday() in (6, 0, 1, 2, 3)  # Sun, Mon, Tue, Wed, Thu
+        d += dt.timedelta(days=1)
+    return n
+
+
+def ensure_config(path, first=dt.date(2024, 1, 1), last=dt.date(2028, 12, 1)):
+    """Create the config workbook (month | working days) if it does not exist yet."""
+    if os.path.isfile(path):
+        return
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "ימי עבודה"
+    ws.sheet_view.rightToLeft = True
+    ws.append(["חודש", "ימי עבודה"])
+    style_header(ws, 1, 2)
+    for m in month_range(first, last):
+        ws.append([m, default_working_days(m)])
+        ws.cell(ws.max_row, 1).number_format = "MM/YYYY"
+    ws.column_dimensions["A"].width = 12
+    ws.column_dimensions["B"].width = 12
+    ws.freeze_panes = "A2"
+    wb.save(path)
+    log.info("Created config file with default working days (Sun-Thu): %s", path)
+
+
+def read_config(path):
+    """Returns {first-of-month date: working days}. Month cell may be a date or text like 03/2026."""
+    cfg = {}
+    ws = openpyxl.load_workbook(path, data_only=True).worksheets[0]
+    for month, days in ws.iter_rows(min_row=2, max_col=2, values_only=True):
+        if month is None or not isinstance(days, (int, float)):
+            continue
+        try:
+            m = dt.date(month.year, month.month, 1) if isinstance(month, (dt.date, dt.datetime)) \
+                else parse_month(str(month))
+        except ValueError:
+            log.warning("Config: ignoring unreadable month '%s'", month)
+            continue
+        cfg[m] = days
+    return cfg
+
+
+RED = PatternFill("solid", fgColor="FF9999")     # more than the month's working days
+YELLOW = PatternFill("solid", fgColor="FFEB84")  # less
+GREEN = PatternFill("solid", fgColor="A9D08E")   # exactly equal
+
+
 def valid_date(value):
     return isinstance(value, (dt.datetime, dt.date)) and value.year >= 2000
 
@@ -151,7 +204,8 @@ def style_header(ws, row, ncols):
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
 
-def write_output(path, records, skipped, months, start, end, basis, source):
+def write_output(path, records, skipped, months, start, end, basis, source, config=None):
+    config = config or {}
     in_range = [r for r in records if start <= r["month"] <= end]
     table = defaultdict(lambda: defaultdict(float))
     for r in in_range:
@@ -176,6 +230,23 @@ def write_output(path, records, skipped, months, start, end, basis, source):
         ws.cell(total_row, c, f"=SUM({col}2:{col}{total_row - 1})")
     for c in range(1, len(headers) + 1):
         ws.cell(total_row, c).font = Font(bold=True)
+
+    # Working days per month from the config file + colouring of each employee cell.
+    cfg_row = total_row + 1
+    ws.cell(cfg_row, 1, "ימי עבודה בחודש (קובץ הגדרות)")
+    ws.cell(cfg_row, 1).font = Font(italic=True)
+    for j, m in enumerate(months, start=2):
+        ws.cell(cfg_row, j, config.get(m))
+        ws.cell(cfg_row, j).font = Font(italic=True)
+    missing = [m.strftime("%m/%Y") for m in months if m not in config]
+    if missing:
+        log.warning("Months missing in %s (not coloured): %s", CONFIG_NAME, ", ".join(missing))
+    for i, name in enumerate(names, start=2):
+        for j, m in enumerate(months, start=2):
+            val, limit = table[name].get(m, 0), config.get(m)
+            if not val or limit is None:
+                continue  # empty cells and months without a config value stay uncoloured
+            ws.cell(i, j).fill = RED if val > limit + 1e-9 else GREEN if abs(val - limit) <= 1e-9 else YELLOW
     ws.column_dimensions["A"].width = 26
     for c in range(2, len(headers) + 1):
         ws.column_dimensions[get_column_letter(c)].width = 11
@@ -215,6 +286,7 @@ def write_output(path, records, skipped, months, start, end, basis, source):
         ("לקוחות כלולים", ", ".join(sorted(CUSTOMERS))),
         ("חישוב", "כמות תוצרים x 1 ליום עבודה, x 0.5 לחצי יום"),
         ("חישוב IBM", "תוצר 068 ו-069 = 0.5 יום, תוצר 001 = 22 ימים, תוצר 123 = 18 ימים (לכל יחידה)"),
+        ("צבעים", "אדום = יותר מימי העבודה בחודש, צהוב = פחות, ירוק = בדיוק (לפי working_days.xlsx)"),
         ("נוצר ב", dt.datetime.now().strftime("%d/%m/%Y %H:%M")),
     ):
         info.append(line)
@@ -231,7 +303,7 @@ def find_input():
     for folder in dict.fromkeys((APP_DIR, os.getcwd())):
         files = [os.path.join(folder, f) for f in os.listdir(folder)
                  if f.lower().endswith((".xlsx", ".xlsm")) and not f.startswith("~$")
-                 and f.lower() != OUTPUT_NAME]
+                 and f.lower() not in (OUTPUT_NAME, CONFIG_NAME)]
         if files:
             files.sort(key=os.path.getmtime, reverse=True)
             if len(files) > 1:
@@ -268,12 +340,15 @@ def run():
     out = a.output or os.path.join(APP_DIR, OUTPUT_NAME)
     log.info("input=%s start=%s end=%s output=%s basis=%s", inp, start, end, out, a.basis)
 
+    ensure_config(CONFIG_PATH)
+    config = read_config(CONFIG_PATH)
+
     log.info("Reading file (can take up to a minute)...")
     records, skipped, tabs = read_orders(inp, a.basis)
     log.info("Read %d usable rows, %d skipped, %d order tabs", len(records), len(skipped), tabs)
     try:
         n_emp, total, n_rows = write_output(out, records, skipped, month_range(start, end),
-                                            start, end, a.basis, inp)
+                                            start, end, a.basis, inp, config)
     except PermissionError:
         raise PermissionError(f"Cannot write {out}. Close the file if it is open in Excel, "
                               "or choose another output path.")

@@ -1,5 +1,6 @@
 *.xlsx
 *.xls
+!working_days.xlsx
 ~$*
 __pycache__/
 work_plan.log

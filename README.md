@@ -28,3 +28,7 @@ On Windows you can double-click `run.bat`.
 - Output sheets: `תכנון חודשי` (the table), `פירוט` (every row behind the numbers), `שורות שדולגו`, `הגדרות`.
 
 The source workbook contains prices and personal data, so `*.xlsx` is git-ignored. Do not commit it.
+
+## Working-days config
+`working_days.xlsx` (columns: month | working days) is created next to the script on first run with Sunday-Thursday counts (no holidays). Edit it to match your real working days.
+In the plan, each employee/month cell is **red** if the days are more than the month's working days, **yellow** if less, **green** if exactly equal. Empty cells and months missing from the config are not coloured.
