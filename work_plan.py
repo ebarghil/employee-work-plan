@@ -97,13 +97,43 @@ def ibm_day_factor(product):
     return IBM_PRODUCT_DAYS.get(m.group(1)) if m else None
 
 
-def default_working_days(month):
-    """Default = Sunday-Thursday days in the month (no holidays). Edit working_days.xlsx to fix."""
-    n, d = 0, month
+# --- Israeli work calendar (used only to FILL the config file the first time) ---------------
+WORK_WEEK = (6, 0, 1, 2, 3)   # Python weekday numbers: Sun, Mon, Tue, Wed, Thu
+HOLIDAY_EVE_VALUE = 0.5       # an eve of a holiday (ערב חג) counts as this many working days
+EVE_HOLIDAYS = ("ראש השנה", "יום כיפור", "סוכות", "פסח", "שבועות")  # eves that get the value above
+# Chol HaMoed and Hoshana Rabbah are treated as regular working days.
+
+
+def _israel_holidays(years):
+    try:
+        import holidays
+    except ImportError:
+        log.warning("Package 'holidays' is missing (pip install holidays): "
+                    "working days will ignore Israeli holidays")
+        return {}
+    return dict(holidays.country_holidays("IL", years=years))
+
+
+def month_calendar(month, hol):
+    """Returns (working days, notes) for one month: Sun-Thu, minus holidays, eves count as half."""
+    n, notes_h, notes_e = 0.0, [], []
+    d = month
     while d.month == month.month:
-        n += d.weekday() in (6, 0, 1, 2, 3)  # Sun, Mon, Tue, Wed, Thu
+        if d.weekday() in WORK_WEEK:
+            name = hol.get(d)
+            tomorrow = hol.get(d + dt.timedelta(days=1))
+            eve_name = tomorrow if tomorrow in EVE_HOLIDAYS else None
+            if name:
+                notes_h.append(f"{d:%d/%m} {name}")
+            elif eve_name:
+                n += HOLIDAY_EVE_VALUE
+                notes_e.append(f"{d:%d/%m} ערב {eve_name}")
+            else:
+                n += 1
         d += dt.timedelta(days=1)
-    return n
+    notes = "; ".join(filter(None, ["חג: " + ", ".join(notes_h) if notes_h else "",
+                                    "ערב חג (חצי יום): " + ", ".join(notes_e) if notes_e else ""]))
+    return n, notes
 
 
 def ensure_config(path, first=dt.date(2024, 1, 1), last=dt.date(2028, 12, 1)):
@@ -114,16 +144,19 @@ def ensure_config(path, first=dt.date(2024, 1, 1), last=dt.date(2028, 12, 1)):
     ws = wb.active
     ws.title = "ימי עבודה"
     ws.sheet_view.rightToLeft = True
-    ws.append(["חודש", "ימי עבודה"])
-    style_header(ws, 1, 2)
+    ws.append(["חודש", "ימי עבודה", "הערות (חגים וערבי חג, לא משפיע על החישוב)"])
+    style_header(ws, 1, 3)
+    hol = _israel_holidays(range(first.year, last.year + 1))
     for m in month_range(first, last):
-        ws.append([m, default_working_days(m)])
+        days, notes = month_calendar(m, hol)
+        ws.append([m, days, notes])
         ws.cell(ws.max_row, 1).number_format = "MM/YYYY"
     ws.column_dimensions["A"].width = 12
     ws.column_dimensions["B"].width = 12
+    ws.column_dimensions["C"].width = 70
     ws.freeze_panes = "A2"
     wb.save(path)
-    log.info("Created config file with default working days (Sun-Thu): %s", path)
+    log.info("Created config file with the Israeli work calendar (Sun-Thu, holidays, eves): %s", path)
 
 
 def read_config(path):

@@ -30,5 +30,5 @@ On Windows you can double-click `run.bat`.
 The source workbook contains prices and personal data, so `*.xlsx` is git-ignored. Do not commit it.
 
 ## Working-days config
-`working_days.xlsx` (columns: month | working days) is created next to the script on first run with Sunday-Thursday counts (no holidays). Edit it to match your real working days.
+`working_days.xlsx` (columns: month | working days) is created next to the script on first run from the Israeli work calendar: Sunday-Thursday, minus holidays, with holiday eves (ערב חג) as half a day. Chol HaMoed counts as regular days. Delete the file to regenerate it; edit any number by hand to override. Settings: `WORK_WEEK`, `HOLIDAY_EVE_VALUE`, `EVE_HOLIDAYS` in `work_plan.py`.
 In the plan, each employee/month cell is **red** if the days are more than the month's working days, **yellow** if less, **green** if exactly equal. Empty cells and months missing from the config are not coloured.
