@@ -32,6 +32,7 @@ CUSTOMERS = {"TEAM NETCOMM", "TEAM NETCOM", "HP", "HPE"}
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_PATH = os.path.join(APP_DIR, "work_plan.log")
+OUTPUT_NAME = "work_plan.xlsx"  # always the same name; overwritten on every run
 log = logging.getLogger("work_plan")
 
 HEADER_ROW = 5
@@ -213,6 +214,21 @@ def write_output(path, records, skipped, months, start, end, basis, source):
     return len(names), sum(r["days"] for r in in_range), len(in_range)
 
 
+def find_input():
+    """The master workbook is assumed to sit in the folder of this script (or the current folder).
+    The newest .xlsx wins; the output file and Excel temp files (~$...) are ignored."""
+    for folder in dict.fromkeys((APP_DIR, os.getcwd())):
+        files = [os.path.join(folder, f) for f in os.listdir(folder)
+                 if f.lower().endswith((".xlsx", ".xlsm")) and not f.startswith("~$")
+                 and f.lower() != OUTPUT_NAME]
+        if files:
+            files.sort(key=os.path.getmtime, reverse=True)
+            if len(files) > 1:
+                log.info("Several Excel files found, using the newest: %s", os.path.basename(files[0]))
+            return files[0]
+    raise SystemExit(f"No Excel file found in {APP_DIR}. Put the master file in this folder.")
+
+
 def ask(prompt, default=None):
     suffix = f" [{default}]" if default else ""
     value = input(f"{prompt}{suffix}: ").strip().strip('"')
@@ -221,15 +237,16 @@ def ask(prompt, default=None):
 
 def run():
     ap = argparse.ArgumentParser(description="Monthly employee work-day plan from the master orders Excel file")
-    ap.add_argument("--input", help="path to the master Excel file")
+    ap.add_argument("--input", help="master Excel file (default: the newest .xlsx in this folder)")
     ap.add_argument("--start", help="first month, YYYY-MM")
     ap.add_argument("--end", help="last month, YYYY-MM")
-    ap.add_argument("--output", help="path of the new Excel file")
+    ap.add_argument("--output", help=f"output file (default: {OUTPUT_NAME} in this folder)")
     ap.add_argument("--basis", choices=("activation", "approval"), default="activation",
                     help="which date decides the month (default: activation = מועד הפעלת התוצר)")
     a = ap.parse_args()
 
-    inp = a.input or ask("Path to the master Excel file")
+    inp = a.input or find_input()
+    log.info("Using source file: %s", inp)
     start = parse_month(a.start or ask("Start month (YYYY-MM)"))
     end = parse_month(a.end or ask("End month (YYYY-MM)"))
     if end < start:
@@ -237,8 +254,7 @@ def run():
     if not inp or not os.path.isfile(inp):
         sys.exit(f"File not found: {inp}")
     # The output file and the log are saved in the same folder as this script.
-    default_out = os.path.join(APP_DIR, f"work_plan_{start:%Y%m}_{end:%Y%m}.xlsx")
-    out = a.output or ask("Where to save the new file", default_out)
+    out = a.output or os.path.join(APP_DIR, OUTPUT_NAME)
     log.info("input=%s start=%s end=%s output=%s basis=%s", inp, start, end, out, a.basis)
 
     log.info("Reading file (can take up to a minute)...")

@@ -6,8 +6,11 @@ Excel file: **employee (מבצע) x month -> work days**.
 ## Run
 ```
 pip install -r requirements.txt
-python work_plan.py            # asks for: file path, start month, end month, output path
+python work_plan.py            # asks only for start month and end month
 ```
+Put the master Excel file in the same folder as `work_plan.py` (the newest `.xlsx` is used).
+The result is always saved as `work_plan.xlsx` in that folder (overwritten each run); errors go to `work_plan.log`.
+
 Or without prompts:
 ```
 python work_plan.py --input master.xlsx --start 2026-01 --end 2026-12 --output plan.xlsx
