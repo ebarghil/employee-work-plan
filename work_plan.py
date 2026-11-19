@@ -28,7 +28,11 @@ SKIP_TABS = {"הזמנות", "בתהליך", "סגורות"}
 
 # Phase 1: customers (cell K2 or J2 of each order tab) to include.
 # Spelling variants found in the file are listed.
-CUSTOMERS = {"TEAM NETCOMM", "TEAM NETCOM", "HP", "HPE"}
+CUSTOMERS = {"TEAM NETCOMM", "TEAM NETCOM", "HP", "HPE", "IBM"}
+
+# IBM tabs: only these "תוצר NNN" products count, each unit = this many work days.
+IBM_CUSTOMERS = {"IBM"}
+IBM_PRODUCT_DAYS = {"068": 0.5, "069": 0.5, "001": 22.0, "123": 18.0}
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_PATH = os.path.join(APP_DIR, "work_plan.log")
@@ -85,6 +89,12 @@ def day_factor(product):
     return None
 
 
+def ibm_day_factor(product):
+    """IBM: look up the 'תוצר NNN' number, e.g. 'תוצר 068' -> 0.5 day per unit."""
+    m = re.search(r"תוצר\s*(\d{3})(?!\d)", product)
+    return IBM_PRODUCT_DAYS.get(m.group(1)) if m else None
+
+
 def valid_date(value):
     return isinstance(value, (dt.datetime, dt.date)) and value.year >= 2000
 
@@ -107,7 +117,7 @@ def read_orders(path, basis):
             product = clean(ws.cell(r, header[COL_PRODUCT]).value)
             if 'סה"כ' in product:
                 break  # totals block, end of this order's lines
-            factor = day_factor(product)
+            factor = ibm_day_factor(product) if customer in IBM_CUSTOMERS else day_factor(product)
             if factor is None:
                 continue
             name = clean(ws.cell(r, header[COL_NAME]).value)
@@ -204,6 +214,7 @@ def write_output(path, records, skipped, months, start, end, basis, source):
         ("חודש נקבע לפי", basis_he),
         ("לקוחות כלולים", ", ".join(sorted(CUSTOMERS))),
         ("חישוב", "כמות תוצרים x 1 ליום עבודה, x 0.5 לחצי יום"),
+        ("חישוב IBM", "תוצר 068 ו-069 = 0.5 יום, תוצר 001 = 22 ימים, תוצר 123 = 18 ימים (לכל יחידה)"),
         ("נוצר ב", dt.datetime.now().strftime("%d/%m/%Y %H:%M")),
     ):
         info.append(line)

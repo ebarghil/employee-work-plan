@@ -19,8 +19,10 @@ On Windows you can double-click `run.bat`.
 
 ## Rules (phase 1)
 - Ignores tabs `הזמנות`, `בתהליך`, `סגורות` and non-order tabs (price lists, summaries).
-- Only order tabs whose customer (cell K2/J2) is TEAM NETCOMM or HP/HPE.
+- Only order tabs whose customer (cell K2/J2) is TEAM NETCOMM, HP/HPE or IBM.
 - Only rows whose `תוצר` is `יום עבודה` (x1) or `חצי יום` (x0.5), multiplied by `כמות תוצרים`.
+- IBM tabs (customer `IBM`): only `תוצר 068` and `תוצר 069` (0.5 day each), `תוצר 001` (22 days), `תוצר 123` (18 days), multiplied by `כמות תוצרים`.
+  Edit `IBM_PRODUCT_DAYS` in `work_plan.py` to change these.
 - Month = month of `מועד הפעלת התוצר`. Use `--basis approval` to use `מועד אישור תוצר` instead.
 - Rows with no quantity or no valid date are listed in the `שורות שדולגו` sheet.
 - Output sheets: `תכנון חודשי` (the table), `פירוט` (every row behind the numbers), `שורות שדולגו`, `הגדרות`.
