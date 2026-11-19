@@ -2,3 +2,4 @@
 *.xls
 ~$*
 __pycache__/
+work_plan.log

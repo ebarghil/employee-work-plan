@@ -9,9 +9,11 @@ Run:  python work_plan.py
 """
 import argparse
 import datetime as dt
+import logging
 import os
 import re
 import sys
+import traceback
 from collections import defaultdict
 
 try:
@@ -27,6 +29,10 @@ SKIP_TABS = {"הזמנות", "בתהליך", "סגורות"}
 # Phase 1: customers (cell K2 or J2 of each order tab) to include.
 # Spelling variants found in the file are listed.
 CUSTOMERS = {"TEAM NETCOMM", "TEAM NETCOM", "HP", "HPE"}
+
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_PATH = os.path.join(APP_DIR, "work_plan.log")
+log = logging.getLogger("work_plan")
 
 HEADER_ROW = 5
 FIRST_DATA_ROW = 7
@@ -213,7 +219,7 @@ def ask(prompt, default=None):
     return value or default
 
 
-def main():
+def run():
     ap = argparse.ArgumentParser(description="Monthly employee work-day plan from the master orders Excel file")
     ap.add_argument("--input", help="path to the master Excel file")
     ap.add_argument("--start", help="first month, YYYY-MM")
@@ -230,17 +236,42 @@ def main():
         sys.exit("End month is before start month.")
     if not inp or not os.path.isfile(inp):
         sys.exit(f"File not found: {inp}")
-    default_out = os.path.join(os.path.dirname(os.path.abspath(inp)),
-                               f"work_plan_{start:%Y%m}_{end:%Y%m}.xlsx")
+    # The output file and the log are saved in the same folder as this script.
+    default_out = os.path.join(APP_DIR, f"work_plan_{start:%Y%m}_{end:%Y%m}.xlsx")
     out = a.output or ask("Where to save the new file", default_out)
+    log.info("input=%s start=%s end=%s output=%s basis=%s", inp, start, end, out, a.basis)
 
-    print("Reading file (can take up to a minute)...")
+    log.info("Reading file (can take up to a minute)...")
     records, skipped, tabs = read_orders(inp, a.basis)
-    n_emp, total, n_rows = write_output(out, records, skipped, month_range(start, end),
-                                        start, end, a.basis, inp)
-    print(f"Order tabs used: {tabs} | employees: {n_emp} | rows: {n_rows} | work days: {total:g}")
-    print(f"Rows skipped (no quantity / no valid date): {len(skipped)}")
-    print(f"Saved: {out}")
+    log.info("Read %d usable rows, %d skipped, %d order tabs", len(records), len(skipped), tabs)
+    try:
+        n_emp, total, n_rows = write_output(out, records, skipped, month_range(start, end),
+                                            start, end, a.basis, inp)
+    except PermissionError:
+        raise PermissionError(f"Cannot write {out}. Close the file if it is open in Excel, "
+                              "or choose another output path.")
+    log.info("Order tabs used: %d | employees: %d | rows: %d | work days: %g",
+             tabs, n_emp, n_rows, total)
+    log.info("Rows skipped (no quantity / no valid date): %d", len(skipped))
+    log.info("Saved: %s", out)
+
+
+def main():
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
+        handlers=[logging.FileHandler(LOG_PATH, mode="a", encoding="utf-8"),
+                  logging.StreamHandler(sys.stdout)])
+    log.info("==== start ==== python %s | %s", sys.version.split()[0], sys.platform)
+    try:
+        run()
+    except SystemExit as e:
+        if e.code not in (None, 0):
+            log.error("Stopped: %s", e.code)
+        raise
+    except BaseException:
+        log.error("FAILED:\n%s", traceback.format_exc())
+        print(f"\nAn error occurred. Details were saved to: {LOG_PATH}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
